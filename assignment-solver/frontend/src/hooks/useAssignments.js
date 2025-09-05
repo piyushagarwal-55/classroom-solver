@@ -32,7 +32,9 @@ export const useAssignments = () => {
     try {
       const response = await assignmentService.getAllAssignments();
       console.log('🎯 useAssignments - Assignment API response:', response);
-      setAssignments(response.assignments || []);
+      console.log('🎯 useAssignments - Assignment data structure:', response.data);
+      console.log('🎯 useAssignments - Assignments array:', response.data?.assignments);
+      setAssignments(response.data?.assignments || []);
       setIsGoogleLinked(true);
     } catch (error) {
       console.error('🎯 useAssignments - Error fetching assignments:', error);
@@ -73,7 +75,8 @@ export const useAssignments = () => {
       console.log('📚 useAssignments - Calling assignmentService.getCourses()');
       const response = await assignmentService.getCourses();
       console.log('📚 useAssignments - Courses response received:', response);
-      setCourses(response.courses || []);
+      console.log('📚 useAssignments - Courses data structure:', response.data);
+      setCourses(response.data?.courses || []);
       setIsGoogleLinked(true);
     } catch (error) {
       console.error('📚 useAssignments - Error fetching courses:', error);
@@ -102,7 +105,7 @@ export const useAssignments = () => {
     
     try {
       const response = await assignmentService.getCourseAssignments(courseId);
-      return response.assignments || [];
+      return response.data?.assignments || [];
     } catch (error) {
       console.error('Error fetching course assignments:', error);
       setError(error.response?.data?.error || 'Failed to fetch course assignments');

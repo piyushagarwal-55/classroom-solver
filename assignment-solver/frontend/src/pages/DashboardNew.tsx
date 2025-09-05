@@ -10,12 +10,12 @@ import {
   CogIcon,
   UserIcon,
   BellIcon,
-  PlusIcon,
-  ArrowRightIcon,
   CalendarIcon,
   BookOpenIcon,
   ExclamationTriangleIcon,
-  LinkIcon
+  LinkIcon,
+  EyeIcon,
+  PlayIcon
 } from '@heroicons/react/24/outline';
 import { useAuth } from '../context/AuthContext';
 import { useAssignments } from '../hooks/useAssignments';
@@ -35,6 +35,28 @@ interface Assignment {
   formattedDueTime: string;
   isOverdue: boolean;
   daysUntilDue: number | null;
+  // Submission status fields
+  isSolved: boolean;
+  submissionState: string;
+  submissionId?: string | null;
+  submissionUpdateTime?: string | null;
+  materials?: Array<{
+    driveFile?: {
+      driveFile?: {
+        id: string;
+        title: string;
+        alternateLink: string;
+        thumbnailUrl?: string;
+      };
+      shareMode?: string;
+    };
+    link?: {
+      url: string;
+      title: string;
+    };
+  }>;
+  alternateLink?: string;
+  workType?: string;
 }
 
 const Dashboard: React.FC = () => {
@@ -45,7 +67,6 @@ const Dashboard: React.FC = () => {
     loading,
     error,
     isGoogleLinked,
-    totalAssignments,
     totalCourses,
     overdueCount,
     refresh
@@ -123,19 +144,34 @@ const Dashboard: React.FC = () => {
   };
 
   const getStatusColor = (assignment: Assignment) => {
+    // If assignment is solved, show green
+    if (assignment.isSolved) {
+      return 'text-green-300 bg-green-500/20 border border-green-500/30';
+    }
+    
+    // If overdue, show red
     if (assignment.isOverdue) {
       return 'text-red-300 bg-red-500/20 border border-red-500/30';
     }
     
-    switch (assignment.state) {
-      case 'TURNED_IN':
-        return 'text-green-300 bg-green-500/20 border border-green-500/30';
+    // Check submission state
+    switch (assignment.submissionState) {
       case 'CREATED':
         return 'text-blue-300 bg-blue-500/20 border border-blue-500/30';
-      case 'ASSIGNED':
+      case 'NEW':
         return 'text-yellow-300 bg-yellow-500/20 border border-yellow-500/30';
       default:
-        return 'text-slate-300 bg-slate-500/20 border border-slate-500/30';
+        // Fallback to assignment state
+        switch (assignment.state) {
+          case 'TURNED_IN':
+            return 'text-green-300 bg-green-500/20 border border-green-500/30';
+          case 'CREATED':
+            return 'text-blue-300 bg-blue-500/20 border border-blue-500/30';
+          case 'ASSIGNED':
+            return 'text-yellow-300 bg-yellow-500/20 border border-yellow-500/30';
+          default:
+            return 'text-slate-300 bg-slate-500/20 border border-slate-500/30';
+        }
     }
   };
 
@@ -154,15 +190,57 @@ const Dashboard: React.FC = () => {
   };
 
   const getStatusText = (assignment: Assignment) => {
+    // First check if assignment is solved based on submission status
+    if (assignment.isSolved) {
+      if (assignment.submissionState === 'TURNED_IN') return 'Submitted';
+      if (assignment.submissionState === 'RETURNED') return 'Graded';
+      return 'Completed';
+    }
+    
     if (assignment.isOverdue) return 'Overdue';
     
-    switch (assignment.state) {
-      case 'TURNED_IN': return 'Submitted';
+    // Check submission state for more detailed status
+    switch (assignment.submissionState) {
       case 'CREATED': return 'In Progress';
-      case 'ASSIGNED': return 'Assigned';
-      default: return 'Unknown';
+      case 'NEW': return 'Not Started';
+      default:
+        // Fallback to assignment state
+        switch (assignment.state) {
+          case 'TURNED_IN': return 'Submitted';
+          case 'CREATED': return 'In Progress';
+          case 'ASSIGNED': return 'Assigned';
+          default: return 'Unknown';
+        }
     }
   };
+
+  const handleSolveAssignment = (assignment: Assignment) => {
+    // TODO: Navigate to assignment solver page
+    console.log('Solving assignment:', assignment.title);
+    // You can implement navigation to a solver page here
+    // navigate(`/solve/${assignment.id}`);
+  };
+
+  const handleViewMaterial = (material: any) => {
+    if (material.driveFile?.driveFile?.alternateLink) {
+      window.open(material.driveFile.driveFile.alternateLink, '_blank');
+    } else if (material.link?.url) {
+      window.open(material.link.url, '_blank');
+    }
+  };
+
+  const handleViewAssignment = (assignment: Assignment) => {
+    if (assignment.alternateLink) {
+      window.open(assignment.alternateLink, '_blank');
+    }
+  };
+
+  // Filter assignments to show only assigned/pending ones (not completed or solved)
+  const pendingAssignments = assignments.filter(assignment => 
+    assignment.state !== 'TURNED_IN' && 
+    assignment.state !== 'RETURNED' && 
+    !assignment.isSolved  // Exclude assignments that are marked as solved
+  );
 
   const handleGoogleAuthSuccess = (user: any) => {
     // Refresh assignments after successful authentication
@@ -286,8 +364,8 @@ const Dashboard: React.FC = () => {
           <motion.div variants={itemVariants} className="bg-slate-800/90 backdrop-blur-lg border border-slate-700/50 rounded-2xl p-6 shadow-xl">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-slate-400 text-sm">Total Assignments</p>
-                <p className="text-3xl font-bold text-white">{totalAssignments}</p>
+                <p className="text-slate-400 text-sm">Unsolved</p>
+                <p className="text-3xl font-bold text-white">{pendingAssignments.length}</p>
               </div>
               <div className="w-12 h-12 bg-blue-500/20 rounded-xl flex items-center justify-center">
                 <DocumentTextIcon className="w-6 h-6 text-blue-400" />
@@ -298,8 +376,8 @@ const Dashboard: React.FC = () => {
           <motion.div variants={itemVariants} className="bg-slate-800/90 backdrop-blur-lg border border-slate-700/50 rounded-2xl p-6 shadow-xl">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-slate-400 text-sm">Completed</p>
-                <p className="text-3xl font-bold text-white">{assignments.filter(a => a.state === 'TURNED_IN').length}</p>
+                <p className="text-slate-400 text-sm">Solved</p>
+                <p className="text-3xl font-bold text-white">{assignments.filter(a => a.isSolved).length}</p>
               </div>
               <div className="w-12 h-12 bg-green-500/20 rounded-xl flex items-center justify-center">
                 <CheckCircleIcon className="w-6 h-6 text-green-400" />
@@ -310,8 +388,8 @@ const Dashboard: React.FC = () => {
           <motion.div variants={itemVariants} className="bg-slate-800/90 backdrop-blur-lg border border-slate-700/50 rounded-2xl p-6 shadow-xl">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-slate-400 text-sm">Pending</p>
-                <p className="text-3xl font-bold text-white">{assignments.filter(a => a.state === 'ASSIGNED').length}</p>
+                <p className="text-slate-400 text-sm">In Progress</p>
+                <p className="text-3xl font-bold text-white">{assignments.filter(a => a.submissionState === 'CREATED' && !a.isSolved).length}</p>
               </div>
               <div className="w-12 h-12 bg-yellow-500/20 rounded-xl flex items-center justify-center">
                 <ClockIcon className="w-6 h-6 text-yellow-400" />
@@ -349,18 +427,17 @@ const Dashboard: React.FC = () => {
           <motion.div variants={itemVariants} className="lg:col-span-2">
             <div className="bg-slate-800/90 backdrop-blur-lg border border-slate-700/50 rounded-2xl p-6 shadow-xl">
               <div className="flex items-center justify-between mb-6">
-                <h2 className="text-xl font-bold text-white">Recent Assignments</h2>
+                <h2 className="text-xl font-bold text-white">Unsolved Assignments</h2>
                 <div className="flex items-center space-x-3">
+                  <span className="text-sm text-slate-400">
+                    {pendingAssignments.length} assignments to solve
+                  </span>
                   <button
                     onClick={refresh}
                     className="bg-slate-700 hover:bg-slate-600 text-white px-3 py-2 text-sm rounded-xl transition-all duration-200"
                     disabled={loading}
                   >
                     {loading ? 'Loading...' : 'Refresh'}
-                  </button>
-                  <button className="bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700 text-white px-4 py-2 text-sm rounded-xl flex items-center space-x-2 transition-all duration-200 shadow-lg hover:shadow-xl">
-                    <PlusIcon className="w-4 h-4" />
-                    <span>New Assignment</span>
                   </button>
                 </div>
               </div>
@@ -381,21 +458,21 @@ const Dashboard: React.FC = () => {
                     Try Again
                   </button>
                 </div>
-              ) : assignments.length === 0 ? (
+              ) : pendingAssignments.length === 0 ? (
                 <div className="text-center py-12">
                   <DocumentTextIcon className="w-12 h-12 text-slate-400 mx-auto mb-4" />
-                  <p className="text-slate-400 mb-2">No assignments found</p>
-                  <p className="text-slate-500 text-sm">Your Google Classroom assignments will appear here</p>
+                  <p className="text-slate-400 mb-2">No unsolved assignments</p>
+                  <p className="text-slate-500 text-sm">All your assignments are solved! 🎉</p>
                 </div>
               ) : (
                 <div className="space-y-4">
-                  {assignments.slice(0, 6).map((assignment, index) => (
+                  {pendingAssignments.slice(0, 10).map((assignment, index) => (
                     <motion.div
                       key={assignment.id}
                       initial={{ opacity: 0, x: -20 }}
                       animate={{ opacity: 1, x: 0 }}
                       transition={{ delay: index * 0.1 }}
-                      className={`bg-slate-800/50 border-l-4 ${getPriorityColor(assignment)} rounded-lg p-4 hover:bg-slate-700/50 transition-all duration-200 cursor-pointer group`}
+                      className={`bg-slate-800/50 border-l-4 ${getPriorityColor(assignment)} rounded-lg p-4 hover:bg-slate-700/50 transition-all duration-200 group`}
                     >
                       <div className="flex items-start justify-between">
                         <div className="flex-1">
@@ -412,13 +489,35 @@ const Dashboard: React.FC = () => {
                               </span>
                             )}
                           </div>
-                          <p className="text-slate-400 text-sm mb-2 line-clamp-2">
+                          <p className="text-slate-400 text-sm mb-3 line-clamp-2">
                             {assignment.description || 'No description available'}
                           </p>
-                          <div className="flex items-center space-x-4 text-xs text-slate-500">
+                          
+                          {/* Assignment Materials */}
+                          {assignment.materials && assignment.materials.length > 0 && (
+                            <div className="mb-3">
+                              <p className="text-slate-500 text-xs mb-2">Materials:</p>
+                              <div className="flex flex-wrap gap-2">
+                                {assignment.materials.map((material: any, idx: number) => (
+                                  <button
+                                    key={idx}
+                                    onClick={() => handleViewMaterial(material)}
+                                    className="flex items-center space-x-1 bg-blue-500/20 hover:bg-blue-500/30 border border-blue-500/30 rounded-lg px-2 py-1 text-xs text-blue-300 transition-colors"
+                                  >
+                                    <EyeIcon className="w-3 h-3" />
+                                    <span>
+                                      {material.driveFile?.driveFile?.title || material.link?.title || 'View Material'}
+                                    </span>
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                          
+                          <div className="flex items-center space-x-4 text-xs text-slate-500 mb-3">
                             <span className="flex items-center space-x-1">
                               <BookOpenIcon className="w-4 h-4" />
-                              <span>Course ID: {assignment.courseId}</span>
+                              <span>{assignment.courseName || `Course: ${assignment.courseId}`}</span>
                             </span>
                             <span className="flex items-center space-x-1">
                               <CalendarIcon className="w-4 h-4" />
@@ -435,16 +534,34 @@ const Dashboard: React.FC = () => {
                               </span>
                             )}
                           </div>
+                          
+                          {/* Action Buttons */}
+                          <div className="flex items-center space-x-2">
+                            <button
+                              onClick={() => handleSolveAssignment(assignment)}
+                              className="bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700 text-white px-3 py-1.5 rounded-lg text-xs font-medium flex items-center space-x-1 transition-all duration-200 shadow-lg hover:shadow-xl"
+                            >
+                              <PlayIcon className="w-3 h-3" />
+                              <span>Solve Assignment</span>
+                            </button>
+                            
+                            <button
+                              onClick={() => handleViewAssignment(assignment)}
+                              className="bg-slate-600 hover:bg-slate-500 text-white px-3 py-1.5 rounded-lg text-xs font-medium flex items-center space-x-1 transition-all duration-200"
+                            >
+                              <EyeIcon className="w-3 h-3" />
+                              <span>View in Classroom</span>
+                            </button>
+                          </div>
                         </div>
-                        <ArrowRightIcon className="w-5 h-5 text-slate-400 group-hover:text-white group-hover:translate-x-1 transition-all duration-200" />
                       </div>
                     </motion.div>
                   ))}
                   
-                  {assignments.length > 6 && (
+                  {pendingAssignments.length > 10 && (
                     <div className="text-center pt-4">
                       <button className="text-blue-400 hover:text-blue-300 text-sm font-medium transition-colors">
-                        View all {assignments.length} assignments →
+                        View all {pendingAssignments.length} pending assignments →
                       </button>
                     </div>
                   )}

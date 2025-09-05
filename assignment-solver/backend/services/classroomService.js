@@ -61,6 +61,17 @@ const getAllAssignments = async (accessToken) => {
     console.log('🔍 getAllAssignments - Starting to fetch assignments...');
     const courses = await getCourses(accessToken);
     console.log(`🔍 getAllAssignments - Found ${courses.length} courses`);
+    
+    // Get current user profile to get their ID for submission checking
+    let currentUserId = 'me'; // Default fallback
+    try {
+      const userProfile = await getUserProfile(accessToken);
+      currentUserId = userProfile.id;
+      console.log(`🔍 getAllAssignments - Current user ID: ${currentUserId}`);
+    } catch (userError) {
+      console.warn('⚠️ Could not fetch user profile, using "me" as user ID');
+    }
+    
     const allAssignments = [];
     
     for (const course of courses) {
@@ -69,29 +80,49 @@ const getAllAssignments = async (accessToken) => {
         const assignments = await getCourseAssignments(accessToken, course.id);
         console.log(`🔍 Found ${assignments.length} assignments in course: ${course.name}`);
         
-        // Add course information to each assignment
-        const assignmentsWithCourse = assignments.map(assignment => ({
-          id: assignment.id,
-          title: assignment.title,
-          description: assignment.description || '',
-          courseName: course.name,
-          courseId: course.id,
-          dueDate: assignment.dueDate ? formatDueDate(assignment.dueDate, assignment.dueTime) : null,
-          creationTime: assignment.creationTime,
-          updateTime: assignment.updateTime,
-          maxPoints: assignment.maxPoints || null,
-          workType: assignment.workType || 'ASSIGNMENT',
-          state: assignment.state || 'PUBLISHED',
-          alternateLink: assignment.alternateLink,
-          materials: assignment.materials || []
-        }));
-        
-        allAssignments.push(...assignmentsWithCourse);
+        // Add course information and submission status to each assignment
+        for (const assignment of assignments) {
+          // Check submission status for this assignment
+          const submissionStatus = await checkAssignmentStatus(
+            accessToken, 
+            course.id, 
+            assignment.id, 
+            currentUserId
+          );
+          
+          const assignmentWithDetails = {
+            id: assignment.id,
+            title: assignment.title,
+            description: assignment.description || '',
+            courseName: course.name,
+            courseId: course.id,
+            dueDate: assignment.dueDate ? formatDueDate(assignment.dueDate, assignment.dueTime) : null,
+            creationTime: assignment.creationTime,
+            updateTime: assignment.updateTime,
+            maxPoints: assignment.maxPoints || null,
+            workType: assignment.workType || 'ASSIGNMENT',
+            state: assignment.state || 'PUBLISHED',
+            alternateLink: assignment.alternateLink,
+            materials: assignment.materials || [],
+            // Add submission status
+            isSolved: submissionStatus.isSolved,
+            submissionState: submissionStatus.submissionState,
+            submissionId: submissionStatus.submissionId || null,
+            submissionUpdateTime: submissionStatus.updateTime || null
+          };
+          
+          allAssignments.push(assignmentWithDetails);
+        }
       } catch (courseError) {
         console.warn(`⚠️ Skipping course ${course.name} due to error:`, courseError.message);
         // Continue with other courses even if one fails
       }
     }
+    
+    console.log(`🔍 getAllAssignments - Total assignments fetched: ${allAssignments.length}`);
+    const solvedCount = allAssignments.filter(a => a.isSolved).length;
+    const unsolvedCount = allAssignments.filter(a => !a.isSolved).length;
+    console.log(`🔍 getAllAssignments - Solved: ${solvedCount}, Unsolved: ${unsolvedCount}`);
     
     return allAssignments;
   } catch (error) {
@@ -146,6 +177,61 @@ const getAssignmentSubmissions = async (accessToken, courseId, assignmentId) => 
 };
 
 /**
+ * Check if an assignment is solved (completed) by the current user
+ */
+const checkAssignmentStatus = async (accessToken, courseId, assignmentId, userId) => {
+  try {
+    oauth2Client.setCredentials({ access_token: accessToken });
+    const classroom = google.classroom({ version: 'v1', auth: oauth2Client });
+    
+    console.log(`🔍 Checking assignment status for course: ${courseId}, assignment: ${assignmentId}, user: ${userId}`);
+    
+    const response = await classroom.courses.courseWork.studentSubmissions.list({
+      courseId: courseId,
+      courseWorkId: assignmentId,
+      userId: userId || 'me'  // Use 'me' for current authenticated user
+    });
+    
+    const submissions = response.data.studentSubmissions || [];
+    
+    if (submissions.length > 0) {
+      const submission = submissions[0];
+      const state = submission.state;
+      
+      console.log(`🔍 Assignment ${assignmentId} submission state: ${state}`);
+      
+      // Check if assignment is "solved" (completed)
+      const isSolved = state === 'TURNED_IN' || state === 'RETURNED';
+      
+      return {
+        isSolved: isSolved,
+        state: state,
+        submissionId: submission.id,
+        updateTime: submission.updateTime,
+        submissionState: state
+      };
+    }
+    
+    console.log(`🔍 No submission found for assignment ${assignmentId}, considering as unsolved`);
+    return { 
+      isSolved: false, 
+      state: 'NEW',
+      submissionState: 'NEW'
+    };
+    
+  } catch (error) {
+    console.error(`❌ Error checking assignment status for ${assignmentId}:`, error);
+    // If we can't check status, assume it's not solved to be safe
+    return { 
+      isSolved: false, 
+      state: 'UNKNOWN',
+      submissionState: 'UNKNOWN',
+      error: error.message 
+    };
+  }
+};
+
+/**
  * Get user profile information
  */
 const getUserProfile = async (accessToken) => {
@@ -166,6 +252,7 @@ module.exports = {
   getCourseAssignments,
   getAllAssignments,
   getAssignmentSubmissions,
+  checkAssignmentStatus,
   getUserProfile,
   formatDueDate
 };
